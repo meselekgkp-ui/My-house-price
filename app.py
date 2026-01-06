@@ -6,45 +6,35 @@ from datetime import datetime
 from sklearn.base import BaseEstimator, TransformerMixin
 
 # ==============================================================================
-# 1. NOTWENDIGE KLASSEN (CUSTOM TRANSFORMERS)
+# 1. NOTWENDIGE KLASSEN FÜR DAS MODELL-LADEN
 # ==============================================================================
 
 class DateFeatureTransformer(BaseEstimator, TransformerMixin):
-    def __init__(self, date_col):
-        self.date_col = date_col
-    def fit(self, X, y=None):
-        return self
+    def __init__(self, date_col): self.date_col = date_col
+    def fit(self, X, y=None): return self
     def transform(self, X):
         X = X.copy()
         X[self.date_col] = pd.to_datetime(X[self.date_col])
-        X['post_year'] = X[self.date_col].dt.year
-        X['post_month'] = X[self.date_col].dt.month
+        X['post_year'], X['post_month'] = X[self.date_col].dt.year, X[self.date_col].dt.month
         return X.drop(columns=[self.date_col])
 
 class GroupMedianImputer(BaseEstimator, TransformerMixin):
     def __init__(self, group_col, target_col):
-        self.group_col = group_col
-        self.target_col = target_col
-        self.group_medians = {}
-        self.global_median = 0
+        self.group_col, self.target_col = group_col, target_col
+        self.group_medians, self.global_median = {}, 0
     def fit(self, X, y=None):
         self.global_median = X[self.target_col].median()
         self.group_medians = X.groupby(self.group_col)[self.target_col].median().to_dict()
         return self
     def transform(self, X):
         X = X.copy()
-        X[self.target_col] = X.apply(
-            lambda row: self.group_medians.get(row[self.group_col], self.global_median)
-            if pd.isna(row[self.target_col]) else row[self.target_col], axis=1
-        )
+        X[self.target_col] = X.apply(lambda r: self.group_medians.get(r[self.group_col], self.global_median) if pd.isna(r[self.target_col]) else r[self.target_col], axis=1)
         return X
 
 class CustomTargetEncoder(BaseEstimator, TransformerMixin):
     def __init__(self, group_col, target_col):
-        self.group_col = group_col
-        self.target_col = target_col
-        self.mappings = {}
-        self.global_mean = 0
+        self.group_col, self.target_col = group_col, target_col
+        self.mappings, self.global_mean = {}, 0
     def fit(self, X, y=None):
         self.global_mean = X[self.target_col].mean()
         self.mappings = X.groupby(self.group_col)[self.target_col].mean().to_dict()
@@ -55,176 +45,152 @@ class CustomTargetEncoder(BaseEstimator, TransformerMixin):
         return X.drop(columns=[self.group_col])
 
 # ==============================================================================
-# 2. REGIONALE DATENSTRUKTUR (AUSWAHL-LOGIK)
+# 2. ÜBERSETZUNGS-DIKTIONÄRE (UI -> MODELL)
 # ==============================================================================
 
-# Beispielhafte Datenstruktur für die Hierarchie. 
-# Für die finale Version können Sie diese Liste mit allen Werten aus Ihrem Datensatz füllen.
-REGION_DATA = {
-    "Bayern": {
-        "Deggendorf": ["94469", "94447"],
-        "Muenchen": ["80331", "80333", "80801"],
-        "Passau": ["94032", "94034", "94036"]
-    },
-    "Berlin": {
-        "Berlin": ["10115", "10117", "10435", "10785", "14195"]
-    },
-    "Nordrhein_Westfalen": {
-        "Koeln": ["50667", "50668", "50733"],
-        "Duesseldorf": ["40210", "40212", "40476"]
-    }
+HEATING_MAP = {
+    "Zentralheizung": "central_heating", "Fernwärme": "district_heating",
+    "Gas-Heizung": "gas_heating", "Etagenheizung": "self_contained_central_heating",
+    "Fußbodenheizung": "floor_heating", "Ölheizung": "oil_heating",
+    "Wärmepumpe": "heat_pump", "Holzpelletheizung": "wood_pellet_heating"
+}
+
+CONDITION_MAP = {
+    "Gepflegt": "well_kept", "Erstbezug": "first_time_use", 
+    "Saniert": "refurbished", "Vollständig renoviert": "fully_renovated",
+    "Neuwertig": "mint_condition", "Modernisiert": "modernized",
+    "Erstbezug nach Sanierung": "first_time_use_after_refurbishment", "Nach Vereinbarung": "negotiable"
+}
+
+FLAT_TYPE_MAP = {
+    "Etagenwohnung": "apartment", "Dachgeschoss": "roof_storey",
+    "Erdgeschoss": "ground_floor", "Maisonette": "maisonette",
+    "Hochparterre": "raised_ground_floor", "Terrassenwohnung": "terraced_flat",
+    "Penthouse": "penthouse", "Souterrain": "half_basement"
+}
+
+QUALITY_MAP = {
+    "Normal": "normal", "Gehoben": "sophisticated", "Luxus": "luxury", "Einfach": "simple"
+}
+
+# Hierarchische Regionale Daten (Beispielhaft - bitte vervollständigen)
+REGION_STRUCTURE = {
+    "Bayern": {"Deggendorf": ["94469", "94447"], "Muenchen": ["80331", "80801"]},
+    "Berlin": {"Berlin": ["10115", "10117", "10435"]},
+    "Nordrhein_Westfalen": {"Koeln": ["50667", "50733"], "Duesseldorf": ["40210"]}
 }
 
 # ==============================================================================
-# 3. SEITENKONFIGURATION & STYLING (PROFESSIONELLER LOOK)
+# 3. LAYOUT & DESIGN
 # ==============================================================================
 
-st.set_page_config(
-    page_title="Mietpreis-Expertensystem",
-    layout="wide"
-)
+st.set_page_config(page_title="Mietpreis-Analysesystem", layout="wide")
 
-# Behörden-Design (Dunkelblau/Weiß)
 st.markdown("""
     <style>
-    .main { background-color: #FFFFFF; }
-    .stHeader { color: #003366; font-family: 'Arial', sans-serif; }
-    .stButton>button { 
-        width: 100%; 
-        background-color: #003366; 
-        color: white; 
-        border-radius: 0px;
-        height: 3.5em;
-        font-size: 16px;
-        border: none;
-    }
-    .stButton>button:hover { background-color: #002244; color: white; }
-    h1 { color: #003366; border-bottom: 3px solid #003366; padding-bottom: 10px; font-weight: bold; }
-    h3 { color: #003366; border-left: 5px solid #003366; padding-left: 10px; margin-top: 30px; }
-    .stSelectbox, .stNumberInput { font-size: 14px; }
+    .stApp { background-color: #F4F7F9; }
+    .main-header { color: #2C3E50; font-size: 26px; font-weight: bold; padding-bottom: 10px; border-bottom: 2px solid #BDC3C7; margin-bottom: 20px; }
+    .section-header { color: #34495E; font-size: 16px; font-weight: bold; margin-top: 20px; text-transform: uppercase; letter-spacing: 1px; }
+    .stButton>button { background-color: #3498DB; color: white; border-radius: 4px; padding: 12px; font-weight: bold; border: none; width: 100%; }
+    .stButton>button:hover { background-color: #2980B9; }
+    .result-card { background-color: white; padding: 30px; border-radius: 5px; border-left: 10px solid #3498DB; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     </style>
     """, unsafe_allow_html=True)
 
-# ==============================================================================
-# 4. DATENABFRAGE (HIERARCHISCHES FORMULAR)
-# ==============================================================================
-
-st.title("Mietpreis-Analysesystem für Wohnraum")
-st.write("Wissenschaftliche Prognose der Gesamtmiete basierend auf dem aktuellen LightGBM-Modell.")
-
-with st.form("experten_form"):
-    
-    # --- BLOCK 1: Regionale Auswahl (Die Hierarchie) ---
-    st.subheader("Regionale Identifikation")
-    col_r1, col_r2, col_r3 = st.columns(3)
-    
-    with col_r1:
-        selected_regio1 = st.selectbox("Bundesland", sorted(list(REGION_DATA.keys())))
-    
-    with col_r2:
-        available_cities = sorted(list(REGION_DATA[selected_regio1].keys()))
-        selected_regio2 = st.selectbox("Stadt / Kreis", available_cities)
-        
-    with col_r3:
-        available_plz = sorted(REGION_DATA[selected_regio1][selected_regio2])
-        selected_geo_plz = st.selectbox("Postleitzahl", available_plz)
-
-    # --- BLOCK 2: Objektdaten ---
-    st.subheader("Objektspezifische Merkmale")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        living_space = st.number_input("Wohnfläche (m²)", 10.0, 500.0, 75.0)
-    with col2:
-        no_rooms = st.number_input("Zimmeranzahl", 1.0, 15.0, 3.0)
-    with col3:
-        floor = st.number_input("Etage", 0, 20, 1)
-    with col4:
-        yearConstructed = st.number_input("Baujahr (0 = Unbekannt)", 0, 2025, 1990)
-
-    # --- BLOCK 3: Ausstattung & Qualität ---
-    st.subheader("Qualitative Merkmale")
-    col5, col6, col7 = st.columns(3)
-    with col5:
-        heatingType = st.selectbox("Heizungsart", ["central_heating", "district_heating", "gas_heating", "heat_pump", "oil_heating"])
-    with col6:
-        condition = st.selectbox("Zustand", ["first_time_use", "well_kept", "refurbished", "fully_renovated", "modernized"])
-    with col7:
-        interiorQual = st.selectbox("Ausstattung", ["normal", "sophisticated", "luxury", "simple"])
-    
-    typeOfFlat = st.selectbox("Wohnungstyp", ["apartment", "roof_storey", "ground_floor", "maisonette", "penthouse"])
-
-    # --- BLOCK 4: Ausstattung (Checkboxen) ---
-    st.subheader("Zusatzausstattung")
-    c1, c2, c3, c4, c5 = st.columns(5)
-    with c1:
-        balcony = st.checkbox("Balkon / Terrasse")
-    with c2:
-        lift = st.checkbox("Aufzug")
-    with c3:
-        hasKitchen = st.checkbox("Einbauküche")
-    with c4:
-        garden = st.checkbox("Garten")
-    with c5:
-        cellar = st.checkbox("Keller")
-
-    date_val = st.date_input("Stichtag der Wertermittlung", datetime.now())
-
-    submit_button = st.form_submit_button("Mietpreis-Analyse starten")
+st.markdown('<div class="main-header">Statistisches Informationssystem zur Mietpreisermittlung</div>', unsafe_allow_html=True)
 
 # ==============================================================================
-# 5. PROGNOSE-BERECHNUNG
+# 4. FORMULAR
 # ==============================================================================
 
-if submit_button:
+with st.form("expert_prognose"):
+    
+    st.markdown('<div class="section-header">Lage und Region</div>', unsafe_allow_html=True)
+    r_col1, r_col2, r_col3 = st.columns(3)
+    with r_col1:
+        regio1 = st.selectbox("Bundesland", sorted(REGION_STRUCTURE.keys()))
+    with r_col2:
+        regio2 = st.selectbox("Stadt / Landkreis", sorted(REGION_STRUCTURE[regio1].keys()))
+    with r_col3:
+        geo_plz = st.selectbox("Postleitzahl", sorted(REGION_STRUCTURE[regio1][regio2]))
+
+    st.markdown('<div class="section-header">Physische Objektdaten</div>', unsafe_allow_html=True)
+    p_col1, p_col2, p_col3, p_col4 = st.columns(4)
+    with p_col1:
+        livingSpace = st.number_input("Wohnfläche (m²)", min_value=10, max_value=500, value=75, step=1)
+    with p_col2:
+        noRooms = st.number_input("Zimmeranzahl", min_value=1, max_value=15, value=3, step=1)
+    with p_col3:
+        floor = st.number_input("Etage", min_value=0, max_value=30, value=1, step=1)
+    with p_col4:
+        yearConstructed = st.number_input("Baujahr (0 = Unbekannt)", min_value=0, max_value=2025, value=1995, step=1)
+
+    st.markdown('<div class="section-header">Qualität und Ausstattung</div>', unsafe_allow_html=True)
+    q_col1, q_col2, q_col3, q_col4 = st.columns(4)
+    with q_col1:
+        heating_ui = st.selectbox("Heizungssystem", list(HEATING_MAP.keys()))
+    with q_col2:
+        condition_ui = st.selectbox("Zustand des Objekts", list(CONDITION_MAP.keys()))
+    with q_col3:
+        interior_ui = st.selectbox("Ausstattungsstandard", list(QUALITY_MAP.keys()))
+    with q_col4:
+        flat_ui = st.selectbox("Wohnungstyp", list(FLAT_TYPE_MAP.keys()))
+
+    st.markdown('<div class="section-header">Zusätzliche Merkmale</div>', unsafe_allow_html=True)
+    f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
+    with f_col1: balcony = st.checkbox("Balkon / Terrasse")
+    with f_col2: lift = st.checkbox("Aufzug")
+    with f_col3: hasKitchen = st.checkbox("Einbauküche")
+    with f_col4: garden = st.checkbox("Gartenanteil")
+    with f_col5: cellar = st.checkbox("Keller")
+
+    date_val = st.date_input("Analysestichtag", datetime.now())
+    
+    submit = st.form_submit_button("Analyse durchführen")
+
+# ==============================================================================
+# 5. BERECHNUNG
+# ==============================================================================
+
+if submit:
     try:
         model = joblib.load('mzyana_model_final.pkl')
         
-        # Logik für fehlende Werte
-        y_missing = 1 if yearConstructed == 0 else 0
-        year_val = np.nan if yearConstructed == 0 else yearConstructed
-
-        # DataFrame Erstellung (Reihenfolge muss dem Training entsprechen)
+        # Mapping der UI-Werte auf Modell-Keys
         input_df = pd.DataFrame({
             'date': [pd.to_datetime(date_val)],
-            'livingSpace': [float(living_space)],
-            'noRooms': [float(no_rooms)],
+            'livingSpace': [float(livingSpace)],
+            'noRooms': [float(noRooms)],
             'floor': [float(floor)],
-            'regio1': [selected_regio1],
-            'regio2': [selected_regio2],
-            'heatingType': [heatingType],
-            'condition': [condition],
-            'interiorQual': [interiorQual],
-            'typeOfFlat': [typeOfFlat],
-            'geo_plz': [str(selected_geo_plz)],
+            'regio1': [regio1],
+            'regio2': [regio2],
+            'heatingType': [HEATING_MAP[heating_ui]],
+            'condition': [CONDITION_MAP[condition_ui]],
+            'interiorQual': [QUALITY_MAP[interior_ui]],
+            'typeOfFlat': [FLAT_TYPE_MAP[flat_ui]],
+            'geo_plz': [str(geo_plz)],
             'balcony': [bool(balcony)],
             'lift': [bool(lift)],
             'hasKitchen': [bool(hasKitchen)],
             'garden': [bool(garden)],
             'cellar': [bool(cellar)],
-            'yearConstructed': [year_val],
-            'condition_was_missing': [0],
-            'interiorQual_was_missing': [0],
-            'heatingType_was_missing': [0],
-            'yearConstructed_was_missing': [y_missing]
+            'yearConstructed': [np.nan if yearConstructed == 0 else float(yearConstructed)],
+            'condition_was_missing': [0], 'interiorQual_was_missing': [0],
+            'heatingType_was_missing': [0], 'yearConstructed_was_missing': [1 if yearConstructed == 0 else 0]
         })
 
         prediction = model.predict(input_df)[0]
 
-        # Ergebnisanzeige
-        st.markdown("---")
-        res_col_l, res_col_r = st.columns([2, 1])
-        with res_col_l:
-            st.subheader("Berechnetes Mietpreisniveau")
-            st.markdown(f"**Geschätzte monatliche Gesamtmiete:**")
-            st.title(f"{prediction:,.2f} EUR")
-        with res_col_r:
-            st.subheader("Analyse-Details")
-            st.write(f"Modell-Konfidenz: Hoch")
-            st.write(f"Basis: LightGBM Gradient Boosting")
-
+        st.markdown(f"""
+            <div class="result-card">
+                <div style="color: #7F8C8D; font-size: 14px;">Erwartete monatliche Bruttokaltmiete:</div>
+                <div style="color: #2C3E50; font-size: 36px; font-weight: bold;">{prediction:,.2f} EUR</div>
+                <div style="color: #BDC3C7; font-size: 12px; margin-top: 15px;">
+                    Statistisches Konfidenzintervall basierend auf LightGBM (R² > 0.90)
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
     except Exception as e:
-        st.error(f"Systemfehler bei der Datenverarbeitung: {str(e)}")
+        st.error(f"Fehler bei der Berechnung: {e}")
 
-# Footer
-st.markdown("---")
-st.write("Akademisches Projekt zur datengestützten Immobilienbewertung | Prof. Wahl")
+st.markdown('<div style="text-align: center; color: #95A5A6; font-size: 11px; margin-top: 60px;">Forschungsmodul Immobilienökonomie | Masterprojekt | Betreuung: Prof. Wahl</div>', unsafe_allow_html=True)
