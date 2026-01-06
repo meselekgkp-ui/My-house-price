@@ -7,7 +7,7 @@ from datetime import datetime
 from sklearn.base import BaseEstimator, TransformerMixin
 
 # ==============================================================================
-# 1. NOTWENDIGE KLASSEN (Damit das Modell funktioniert)
+# 1. HELFER-KLASSEN (Müssen exakt so bleiben)
 # ==============================================================================
 class DateFeatureTransformer(BaseEstimator, TransformerMixin):
     def __init__(self, date_col): self.date_col = date_col
@@ -45,64 +45,58 @@ class CustomTargetEncoder(BaseEstimator, TransformerMixin):
         return X.drop(columns=[self.group_col])
 
 # ==============================================================================
-# 2. DESIGN & SEITEN-KONFIGURATION
+# 2. DESIGN & SETUP
 # ==============================================================================
 st.set_page_config(page_title="Mzyana AI", page_icon="🏠", layout="centered")
 
 st.markdown("""
     <style>
-    /* Hintergrund leicht grau für besseren Kontrast */
+    /* Hintergrund & Text */
     .stApp { background-color: #f8f9fa; }
+    h1, h2, h3 { color: #2c3e50; }
     
-    /* Der Button: Blau mit weißem Text */
+    /* Button Design */
     div.stButton > button {
         background-color: #007BFF !important;
         color: white !important;
-        font-weight: bold !important;
-        border-radius: 8px !important;
-        height: 50px !important;
+        font-size: 1.1rem;
+        font-weight: bold;
+        border-radius: 8px;
+        height: 50px;
         width: 100%;
         border: none;
-        font-size: 1.1rem;
     }
-    div.stButton > button:hover {
-        background-color: #0056b3 !important;
-    }
+    div.stButton > button:hover { background-color: #0056b3 !important; }
 
-    /* Das schräge Feld (Wohnungstyp) */
+    /* Schräger Wohnungstyp */
     div[data-testid="stSelectbox"]:nth-of-type(4) > div > div {
         transform: skewX(-10deg);
         border: 2px solid #007BFF !important;
-        border-radius: 5px;
-        background-color: white;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 3. DATEN LADEN & LOGIK
+# 3. DATEN LADEN & SYNC-LOGIK
 # ==============================================================================
 @st.cache_data
-def load_geo_data():
-    if os.path.exists('geo_data.json'):
-        with open('geo_data.json', 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        reverse = {}
-        for bl, städte in data.items():
-            for stadt, plzs in städte.items():
-                for p in plzs: reverse[str(p)] = (stadt, bl)
-        return data, reverse
-    return {}, {}
+def load_data():
+    if not os.path.exists('geo_data.json'): return {}, {}
+    with open('geo_data.json', 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    rev = {}
+    for bl, staedte in data.items():
+        for stadt, plzs in staedte.items():
+            for p in plzs: rev[str(p)] = (stadt, bl)
+    return data, rev
 
-GEO_DATA, PLZ_MAP = load_geo_data()
+GEO_DATA, PLZ_MAP = load_data()
 
-# Session State Initialisierung
 if 'bl' not in st.session_state: st.session_state.bl = "Bayern"
 if 'st' not in st.session_state: st.session_state.st = "München"
 if 'plz' not in st.session_state: st.session_state.plz = "80331"
 
 def sync_plz():
-    """Synchronisiert Stadt/Land basierend auf der PLZ"""
     p = st.session_state.plz_in
     if p in PLZ_MAP:
         stadt, land = PLZ_MAP[p]
@@ -111,86 +105,81 @@ def sync_plz():
         st.session_state.plz = p
 
 # ==============================================================================
-# 4. INTERFACE (Das was der Nutzer sieht)
+# 4. APP INTERFACE
 # ==============================================================================
 st.title("Intelligente Immobiliensuche 🏡")
 
-# --- STANDORT ---
+# 1. STANDORT (Außerhalb Formular für Live-Update)
 st.subheader("1. Standort")
-# Das PLZ Feld ist außerhalb des Forms, damit es live reagieren kann
 plz = st.text_input("Postleitzahl (z.B. 80331)", value=st.session_state.plz, key="plz_in", on_change=sync_plz)
 
 c_bl, c_st = st.columns(2)
 bl_keys = sorted(list(GEO_DATA.keys()))
-
 with c_bl:
     idx_bl = bl_keys.index(st.session_state.bl) if st.session_state.bl in bl_keys else 0
     sel_bl = st.selectbox("Bundesland", bl_keys, index=idx_bl)
-    st.session_state.bl = sel_bl # Update State
+    st.session_state.bl = sel_bl
 
 st_keys = sorted(list(GEO_DATA.get(sel_bl, {}).keys()))
 with c_st:
     idx_st = st_keys.index(st.session_state.st) if st.session_state.st in st_keys else 0
     sel_st = st.selectbox("Stadt", st_keys, index=idx_st)
-    st.session_state.st = sel_st # Update State
+    st.session_state.st = sel_st
 
 st.markdown("---")
 
-# --- DETAILS FORMULAR ---
-with st.form("detail_form"):
+# 2. DETAILS (Im Formular)
+with st.form("main_form"):
     st.subheader("2. Details")
     c1, c2 = st.columns(2)
     with c1:
         flaeche = st.number_input("Wohnfläche (m²)", 10, 500, 60)
         zimmer = st.number_input("Zimmer", 1.0, 10.0, 2.0, step=0.5)
     with c2:
-        etage = st.number_input("Etage (0 = Erdgeschoss)", -1, 30, 1)
+        etage = st.number_input("Etage (0=EG)", -1, 30, 1)
         baujahr = st.number_input("Baujahr", 1900, 2026, 2000)
 
     st.subheader("3. Ausstattung")
-    HEIZ = {"Zentral": "central_heating", "Gas": "gas_heating", "Fernwärme": "district_heating", "Fußboden": "floor_heating"}
-    ZUST = {"Gepflegt": "well_kept", "Modernisiert": "modernized", "Erstbezug": "first_time_use", "Neuwertig": "mint_condition"}
+    HEIZ = {"Zentral": "central_heating", "Gas": "gas_heating", "Fernwärme": "district_heating"}
+    ZUST = {"Gepflegt": "well_kept", "Modernisiert": "modernized", "Erstbezug": "first_time_use"}
     TYP = {"Etagenwohnung": "apartment", "Dachgeschoss": "roof_storey", "Maisonette": "maisonette", "Loft": "loft"}
     
-    h_col, t_col = st.columns(2)
-    with h_col: h_wahl = st.selectbox("Heizung", list(HEIZ.keys()))
-    with t_col: t_wahl = st.selectbox("Wohnungstyp", list(TYP.keys())) # Das schräge Feld
+    col_h, col_t = st.columns(2)
+    with col_h: h_wahl = st.selectbox("Heizung", list(HEIZ.keys()))
+    with col_t: t_wahl = st.selectbox("Wohnungstyp", list(TYP.keys())) # Schräg
 
     st.subheader("4. Extras")
-    check1, check2, check3 = st.columns(3)
-    with check1: balk = st.checkbox("Balkon")
-    with check2: kuech = st.checkbox("Einbauküche")
-    with check3: aufz = st.checkbox("Aufzug")
+    chk1, chk2, chk3 = st.columns(3)
+    with chk1: balk = st.checkbox("Balkon")
+    with chk2: kuech = st.checkbox("Einbauküche")
+    with chk3: aufz = st.checkbox("Aufzug")
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    submit = st.form_submit_button("JETZT MIETE BERECHNEN 🚀")
+    submit = st.form_submit_button("JETZT PREIS BERECHNEN 🚀")
 
 # ==============================================================================
-# 5. VORHERSAGE LOGIK (MIT INTELLIGENTER DATEISUCHE)
+# 5. VORHERSAGE (Auto-File-Detection)
 # ==============================================================================
 if submit:
+    # Intelligente Dateisuche: Probiert beide Namen
+    model_files = ['mzyana_lightgbm_model.pkl', 'final_model.pkl']
     model = None
-    # Wir probieren BEIDE Namen aus, um sicherzugehen
-    possible_names = ['final_model.pkl', 'mzyana_lightgbm_model.pkl']
     
-    for filename in possible_names:
-        if os.path.exists(filename):
+    for f in model_files:
+        if os.path.exists(f):
             try:
-                model = joblib.load(filename)
+                model = joblib.load(f)
                 break
-            except:
-                continue
-    
+            except: continue
+            
     if model is None:
-        st.error(f"❌ FEHLER: Das Modell konnte nicht gefunden werden. Bitte lade 'final_model.pkl' auf GitHub hoch.")
-        st.write(f"Vorhandene Dateien im Ordner: {os.listdir()}")
+        st.error("❌ FEHLER: Modell-Datei nicht gefunden. Bitte lade 'mzyana_lightgbm_model.pkl' hoch.")
+        st.write("Dateien im Ordner:", os.listdir())
     else:
         try:
-            # Daten DataFrame erstellen
             df = pd.DataFrame({
                 'date': [pd.to_datetime(datetime.now())], 'livingSpace': [float(flaeche)],
                 'noRooms': [float(zimmer)], 'floor': [float(etage)], 'regio1': [sel_bl],
-                'regio2': [sel_st], 'heatingType': [HEIZ[h_wahl]], 'condition': [ZUST["Gepflegt"]], # Default Zustand falls nicht gewählt
+                'regio2': [sel_st], 'heatingType': [HEIZ[h_wahl]], 'condition': [ZUST.get("Gepflegt")], 
                 'interiorQual': ["normal"], 'typeOfFlat': [TYP[t_wahl]], 'geo_plz': [str(plz)],
                 'balcony': [balk], 'lift': [aufz], 'hasKitchen': [kuech], 'garden': [False],
                 'cellar': [True], 'yearConstructed': [float(baujahr)],
@@ -199,16 +188,8 @@ if submit:
             })
 
             preis = model.predict(df)[0]
-            
-            st.success("Berechnung erfolgreich!")
-            st.markdown(f"""
-            <div style="background-color: #e3f2fd; padding: 20px; border-radius: 10px; text-align: center; border: 2px solid #007BFF;">
-                <h3 style="color: #333; margin:0;">Geschätzte Kaltmiete</h3>
-                <h1 style="color: #007BFF; font-size: 3.5rem; margin: 10px 0;">{preis:,.2f} €</h1>
-                <p style="color: #666;">in {sel_st}</p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.success(f"Geschätzte Miete: {preis:,.2f} €")
             st.balloons()
-
+            
         except Exception as e:
-            st.error(f"Ein Fehler ist bei der Berechnung aufgetreten: {e}")
+            st.error(f"Berechnungsfehler: {e}")
