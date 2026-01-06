@@ -61,7 +61,7 @@ st.markdown("""
     .main { background-color: #f5f7f9; }
     .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #ff4b4b; color: white; }
     </style>
-    """, unsafe_allow_value=True)
+    """, unsafe_allow_html=True)
 
 st.title("🏠 Mzyana: KI-Mietpreisrechner")
 st.write("Geben Sie die Details der Wohnung ein, um eine KI-basierte Preisschätzung zu erhalten.")
@@ -111,4 +111,5 @@ if st.button("Mietpreis jetzt schätzen"):
         st.warning("Stellen Sie sicher, dass 'mzyana_model_final.pkl' im selben Ordner liegt.")
 
 st.markdown("---")
+
 st.caption("Entwickelt von [Ayman] als Teil des ML Projekt - Betreut von Prof. Wahl.")
