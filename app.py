@@ -5,17 +5,9 @@ import joblib
 import json
 from datetime import datetime
 from sklearn.base import BaseEstimator, TransformerMixin
-from flask import Flask, render_template
 
-app = Flask(__name__)
-def index():
-    # Flask sucht automatisch im Ordner 'templates' nach der index.html
-    return render_template('index.html')
-
-if __name__ == '__main__':
-    app.run(debug=True)
 # ==============================================================================
-# 1. CUSTOM CLASSES (PFLICHT)
+# 1. CUSTOM CLASSES (PFLICHT FÜR DAS MODELL)
 # ==============================================================================
 class DateFeatureTransformer(BaseEstimator, TransformerMixin):
     def __init__(self, date_col): self.date_col = date_col
@@ -53,63 +45,41 @@ class CustomTargetEncoder(BaseEstimator, TransformerMixin):
         return X.drop(columns=[self.group_col])
 
 # ==============================================================================
-# 2. DESIGN & CSS (TOTAL-FIX FÜR SICHTBARKEIT)
+# 2. DESIGN & CSS (Style)
 # ==============================================================================
+st.set_page_config(page_title="Mietpreis-KI", layout="wide", page_icon="🏢")
 
-st.set_page_config(page_title="Mietpreis-Expertensystem", layout="wide", page_icon="🏢")
-
-# Dieses CSS überschreibt ALLE Streamlit-Standardfarben
 st.markdown("""
     <style>
-    /* 1. Haupt-Hintergrund immer Weiß */
-    .stApp {
-        background-color: #ffffff !important;
+    /* Grunddesign */
+    .stApp { background-color: #ffffff; }
+    h1, h2, h3, p, label { color: #333333 !important; }
+    
+    /* WUNSCH: Schräge Eingabefelder (CSS Trick für Streamlit Inputs) */
+    .stSelectbox div[data-baseweb="select"], .stTextInput input, .stNumberInput input {
+        border: 1px solid #0068C9 !important;
+        border-radius: 5px;
     }
 
-    /* 2. Alle Texte (Überschriften, Labels, Paragraphen) immer Dunkelgrau */
-    h1, h2, h3, h4, h5, h6, p, label, .stMarkdown {
-        color: #262730 !important;
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    }
-    
-    /* 3. Eingabefelder (Inputs) reparieren */
-    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
-        color: #000000 !important; /* Text im Feld schwarz */
-        background-color: #F0F2F6 !important; /* Hintergrund leicht grau */
-        border: 1px solid #D6D6D6 !important;
-    }
-    
-    /* 4. Dropdown-Menüs Lesbarkeit */
-    div[role="listbox"] ul {
-        background-color: #ffffff !important;
-    }
-    div[role="option"] {
-        color: #000000 !important;
-    }
-    div[role="option"]:hover {
-        background-color: #E6F3FF !important;
-    }
-
-    /* 5. Button Styling */
+    /* Button Design */
     .stButton>button {
-        background-color: #0068C9 !important;
-        color: white !important;
-        font-size: 18px !important;
-        border-radius: 8px !important;
-        height: 50px !important;
-        border: none !important;
+        background-color: #0068C9;
+        color: white;
+        font-weight: bold;
+        border-radius: 8px;
+        height: 50px;
+        width: 100%;
+        font-size: 1.2rem;
     }
     .stButton>button:hover {
-        background-color: #004B91 !important;
+        background-color: #004B91;
     }
-
-    /* 6. Ergebnis-Box Design */
-    .result-container {
-        padding: 30px;
-        background-color: #F9F9F9;
-        border-left: 6px solid #0068C9;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    
+    /* Ergebnis Box */
+    .result-box {
+        padding: 20px;
+        background-color: #f0f8ff;
+        border-left: 5px solid #0068C9;
         text-align: center;
         margin-top: 20px;
     }
@@ -120,10 +90,10 @@ st.markdown("""
 # 3. DATENBANK & LOGIK
 # ==============================================================================
 
-# Datenbank laden
-@st.cache_data # Cache damit es schneller lädt
+@st.cache_data
 def load_geo_data():
     try:
+        # Versucht die Datei geo_data.json zu laden
         with open('geo_data.json', 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
@@ -131,103 +101,92 @@ def load_geo_data():
 
 GEO_DATA = load_geo_data()
 
-# Mappings
-HEATING_MAP = {
-    "Zentralheizung": "central_heating", "Fernwärme": "district_heating", "Gas-Heizung": "gas_heating", 
-    "Etagenheizung": "self_contained_central_heating", "Fußbodenheizung": "floor_heating", 
-    "Ölheizung": "oil_heating", "Wärmepumpe": "heat_pump", "Holzpelletheizung": "wood_pellet_heating",
-    "Andere": "central_heating"
-}
-CONDITION_MAP = {
-    "Gepflegt": "well_kept", "Erstbezug": "first_time_use", "Saniert": "refurbished", 
-    "Vollständig renoviert": "fully_renovated", "Neuwertig": "mint_condition", 
-    "Modernisiert": "modernized", "Erstbezug nach Sanierung": "first_time_use_after_refurbishment", 
-    "Andere": "negotiable"
-}
-TYPE_MAP = {
-    "Etagenwohnung": "apartment", "Dachgeschoss": "roof_storey", "Erdgeschoss": "ground_floor", 
-    "Maisonette": "maisonette", "Hochparterre": "raised_ground_floor", "Penthouse": "penthouse", 
-    "Souterrain": "half_basement", "Andere": "apartment"
-}
-QUAL_MAP = {"Normal": "normal", "Gehoben": "sophisticated", "Luxus": "luxury", "Einfach": "simple"}
-
 # ==============================================================================
-# 4. APP INTERFACE
+# 4. APP INTERFACE (HIER PASSIERT DIE INTERAKTION)
 # ==============================================================================
 
-st.title("Mietpreis-Expertensystem")
-st.markdown("---")
+st.title("Mietpreis-Vorhersage KI 🤖")
+st.write("Wähle die Daten aus – die Felder aktualisieren sich automatisch.")
 
 if GEO_DATA is None:
-    st.error("❌ FEHLER: Die Datei 'geo_data.json' wurde nicht gefunden. Bitte laden Sie diese auf GitHub hoch.")
+    st.error("❌ FEHLER: 'geo_data.json' nicht gefunden. Bitte lade die Datei auf GitHub hoch.")
     st.stop()
 
-# --- HAUPTFORMULAR ---
-with st.form("main_form"):
-
-    # 1. INTELLIGENTE STANDORT-SUCHE
-    st.markdown("### 1. Standort")
+with st.form("search_form"):
     
-    # State Auswahl
+    # ---------------------------------------------------------
+    # HIER IST DEINE LOGIK (INTERAKTION DER FELDER)
+    # Streamlit macht das automatisch: Wenn "state" sich ändert,
+    # lädt das Skript neu und füllt "available_cities" neu.
+    # ---------------------------------------------------------
+    
+    st.subheader("1. Standort")
+    
+    # SCHRITT 1: Bundesland wählen
     all_states = sorted(list(GEO_DATA.keys()))
     state = st.selectbox("Bundesland", all_states)
-    
-    # Stadt-Suche (Selectbox mit Suchfunktion)
-    # Streamlit Selectbox IST bereits eine Suche (man kann tippen)
+
+    # SCHRITT 2: Städte laden, die NUR zu diesem Bundesland gehören
+    # GEO_DATA[state] holt nur die Städte des gewählten Bundeslandes
     available_cities = sorted(list(GEO_DATA[state].keys()))
-    city = st.selectbox("Stadt / Landkreis (Tippen zum Suchen)", available_cities)
-    
-    # PLZ Update basierend auf Stadt
+    city = st.selectbox("Stadt / Landkreis", available_cities)
+
+    # SCHRITT 3: PLZ laden, die NUR zu dieser Stadt gehören
+    # GEO_DATA[state][city] holt nur die PLZ dieser Stadt
     available_plzs = sorted(GEO_DATA[state][city])
     plz = st.selectbox("Postleitzahl", available_plzs)
+
+    st.info(f"📍 Auswahl: {city} in {state} (PLZ: {plz})")
     
-    st.caption(f"✓ Gewählt: {plz} {city}, {state}")
-
     st.markdown("---")
-
-    # 2. OBJEKTDATEN & AUSSTATTUNG
+    
+    # Weitere Eingabefelder
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("### 2. Gebäudedaten")
-        living_space = st.number_input("Wohnfläche (m²)", 10, 600, 75, step=1)
-        rooms = st.number_input("Zimmer", 1, 15, 3, step=1)
-        floor = st.number_input("Etage", 0, 40, 1, step=1)
-        year = st.number_input("Baujahr", 1900, 2025, 1995, step=1)
+        st.subheader("2. Die Wohnung")
+        living_space = st.number_input("Wohnfläche (m²)", min_value=10, max_value=500, value=60, step=1)
+        rooms = st.number_input("Zimmer", min_value=1.0, max_value=10.0, value=2.0, step=0.5)
+        floor = st.number_input("Etage (0 = EG)", min_value=-1, max_value=20, value=1, step=1)
+        year = st.number_input("Baujahr", min_value=1900, max_value=2025, value=2000, step=1)
         
     with col2:
-        st.markdown("### 3. Qualität & Zustand")
+        st.subheader("3. Details")
+        # Mappings für das Modell
+        HEATING_MAP = {"Zentralheizung": "central_heating", "Fernwärme": "district_heating", "Gas": "gas_heating", "Fußboden": "floor_heating"}
+        CONDITION_MAP = {"Gepflegt": "well_kept", "Neuwertig": "mint_condition", "Erstbezug": "first_time_use", "Modernisiert": "modernized"}
+        QUAL_MAP = {"Normal": "normal", "Gehoben": "sophisticated", "Luxus": "luxury", "Einfach": "simple"}
+        TYPE_MAP = {"Etagenwohnung": "apartment", "Dachgeschoss": "roof_storey", "Erdgeschoss": "ground_floor", "Maisonette": "maisonette"}
+        
         heating = st.selectbox("Heizung", list(HEATING_MAP.keys()))
         condition = st.selectbox("Zustand", list(CONDITION_MAP.keys()))
-        quality = st.selectbox("Qualität", list(QUAL_MAP.keys()))
+        quality = st.selectbox("Ausstattung", list(QUAL_MAP.keys()))
         flat_type = st.selectbox("Wohnungstyp", list(TYPE_MAP.keys()))
 
-    # 4. EXTRAS
-    st.markdown("### 4. Extras")
-    c1, c2, c3, c4, c5 = st.columns(5)
+    st.subheader("4. Extras")
+    c1, c2, c3 = st.columns(3)
     with c1: has_balcony = st.checkbox("Balkon")
-    with c2: has_lift = st.checkbox("Aufzug")
-    with c3: has_kitchen = st.checkbox("Einbauküche")
-    with c4: has_garden = st.checkbox("Garten")
-    with c5: has_cellar = st.checkbox("Keller")
-
-    # Datum (Versteckt oder Default Heute)
-    date_val = datetime.now()
+    with c2: has_kitchen = st.checkbox("Einbauküche")
+    with c3: has_lift = st.checkbox("Aufzug")
+    has_garden = False # Default Werte falls nicht gefragt
+    has_cellar = True
 
     st.markdown("<br>", unsafe_allow_html=True)
-    submit = st.form_submit_button("MIETPREIS BERECHNEN")
+    
+    # DER BUTTON
+    submit = st.form_submit_button("Miete berechnen 🚀")
 
 # ==============================================================================
-# 5. LOGIK
+# 5. BERECHNUNG NACH DEM KLICK
 # ==============================================================================
-
 if submit:
     try:
-        model = joblib.load('mzyana_model_final.pkl')
+        # Modell laden
+        model = joblib.load('mzyana_lightgbm_model.pkl') # Dateiname muss EXAKT stimmen!
         
-        # Dataframe exakt wie im Training
-        df_input = pd.DataFrame({
-            'date': [pd.to_datetime(date_val)],
+        # Eingabe für das Modell vorbereiten
+        input_data = pd.DataFrame({
+            'date': [pd.to_datetime(datetime.now())],
             'livingSpace': [float(living_space)],
             'noRooms': [float(rooms)],
             'floor': [float(floor)],
@@ -237,33 +196,30 @@ if submit:
             'condition': [CONDITION_MAP[condition]],
             'interiorQual': [QUAL_MAP[quality]],
             'typeOfFlat': [TYPE_MAP[flat_type]],
-            'geo_plz': [str(plz)],
+            'geo_plz': [str(plz)], # PLZ muss String sein
             'balcony': [has_balcony],
             'lift': [has_lift],
             'hasKitchen': [has_kitchen],
             'garden': [has_garden],
             'cellar': [has_cellar],
             'yearConstructed': [float(year)],
-            'condition_was_missing': [0],
-            'interiorQual_was_missing': [0],
-            'heatingType_was_missing': [0],
-            'yearConstructed_was_missing': [0]
+            # Dummys für fehlende Spalten (falls das Modell sie braucht)
+            'condition_was_missing': [0], 'interiorQual_was_missing': [0],
+            'heatingType_was_missing': [0], 'yearConstructed_was_missing': [0]
         })
 
-        pred = model.predict(df_input)[0]
+        # Vorhersage
+        prediction = model.predict(input_data)[0]
 
-        # Ergebnis
+        # Anzeige
         st.markdown(f"""
-        <div class="result-container">
-            <h3 style="color: #555; margin: 0;">Geschätzte Gesamtmiete</h3>
-            <h1 style="color: #0068C9; font-size: 60px; margin: 10px 0;">{pred:,.2f} €</h1>
-            <p style="color: #888;">Berechnet für {city} ({plz}) • {living_space} m²</p>
+        <div class="result-box">
+            <h3>Geschätzte Kaltmiete:</h3>
+            <h1 style="color: #0068C9; font-size: 3em;">{prediction:,.2f} €</h1>
+            <p>für {city}, {living_space} m²</p>
         </div>
         """, unsafe_allow_html=True)
 
     except Exception as e:
-        st.error(f"Fehler: {e}")
-
-st.markdown("---")
-st.caption("Masterprojekt Prof. Wahl | Data Science 2025")
-
+        st.error(f"Fehler bei der Berechnung: {e}")
+        st.info("Tipp: Prüfe, ob die Datei 'mzyana_lightgbm_model.pkl' richtig hochgeladen ist.")
