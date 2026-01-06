@@ -251,7 +251,7 @@ with st.form("main_form"):
 
 if submit:
     try:
-        model = joblib.load('mzyana_lightgbm_model .pkl')
+        model = joblib.load('mzyana_lightgbm_model.pkl')
         
         # Dataframe exakt wie im Training
         df_input = pd.DataFrame({
