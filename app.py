@@ -7,7 +7,7 @@ from datetime import datetime
 from sklearn.base import BaseEstimator, TransformerMixin
 
 # ==============================================================================
-# 1. HELFER-KLASSEN (Damit das Modell funktioniert)
+# 1. HELFER-KLASSEN (NICHT LÖSCHEN!)
 # ==============================================================================
 class DateFeatureTransformer(BaseEstimator, TransformerMixin):
     def __init__(self, date_col): self.date_col = date_col
@@ -45,29 +45,22 @@ class CustomTargetEncoder(BaseEstimator, TransformerMixin):
         return X.drop(columns=[self.group_col])
 
 # ==============================================================================
-# 2. DESIGN & SEITEN-KONFIGURATION
+# 2. DESIGN & SETUP
 # ==============================================================================
 st.set_page_config(page_title="Mzyana AI", page_icon="🏠", layout="centered")
 
 st.markdown("""
     <style>
-    /* Hintergrund & Text */
     .stApp { background-color: #f8f9fa; }
-    
-    /* Button Design: Blau mit weißem Text */
     div.stButton > button {
         background-color: #007BFF !important;
         color: white !important;
-        font-size: 1.1rem;
         font-weight: bold;
         border-radius: 8px;
         height: 50px;
         width: 100%;
         border: none;
     }
-    div.stButton > button:hover { background-color: #0056b3 !important; }
-
-    /* Schräger Wohnungstyp */
     div[data-testid="stSelectbox"]:nth-of-type(4) > div > div {
         transform: skewX(-10deg);
         border: 2px solid #007BFF !important;
@@ -108,35 +101,33 @@ def sync_plz():
 # ==============================================================================
 st.title("Intelligente Immobiliensuche 🏡")
 
-# 1. STANDORT (Außerhalb Formular für Live-Update)
+# Standort (Live-Update)
 st.subheader("1. Standort")
-plz = st.text_input("Postleitzahl (z.B. 80331)", value=st.session_state.plz, key="plz_in", on_change=sync_plz)
+plz = st.text_input("PLZ (z.B. 80331)", value=st.session_state.plz, key="plz_in", on_change=sync_plz)
 
-c_bl, c_st = st.columns(2)
+c1, c2 = st.columns(2)
 bl_keys = sorted(list(GEO_DATA.keys()))
-with c_bl:
-    # Fallback, falls Bundesland nicht gefunden
+with c1:
     idx_bl = bl_keys.index(st.session_state.bl) if st.session_state.bl in bl_keys else 0
     sel_bl = st.selectbox("Bundesland", bl_keys, index=idx_bl)
     st.session_state.bl = sel_bl
 
 st_keys = sorted(list(GEO_DATA.get(sel_bl, {}).keys()))
-with c_st:
-    # Fallback, falls Stadt nicht gefunden
+with c2:
     idx_st = st_keys.index(st.session_state.st) if st.session_state.st in st_keys else 0
     sel_st = st.selectbox("Stadt", st_keys, index=idx_st)
     st.session_state.st = sel_st
 
 st.markdown("---")
 
-# 2. DETAILS (Im Formular)
+# Details Formular
 with st.form("main_form"):
     st.subheader("2. Details")
-    c1, c2 = st.columns(2)
-    with c1:
+    c_a, c_b = st.columns(2)
+    with c_a:
         flaeche = st.number_input("Wohnfläche (m²)", 10, 500, 60)
         zimmer = st.number_input("Zimmer", 1.0, 10.0, 2.0, step=0.5)
-    with c2:
+    with c_b:
         etage = st.number_input("Etage (0=EG)", -1, 30, 1)
         baujahr = st.number_input("Baujahr", 1900, 2026, 2000)
 
@@ -147,7 +138,7 @@ with st.form("main_form"):
     
     col_h, col_t = st.columns(2)
     with col_h: h_wahl = st.selectbox("Heizung", list(HEIZ.keys()))
-    with col_t: t_wahl = st.selectbox("Wohnungstyp", list(TYP.keys())) # Schräg
+    with col_t: t_wahl = st.selectbox("Wohnungstyp", list(TYP.keys()))
 
     st.subheader("4. Extras")
     chk1, chk2, chk3 = st.columns(3)
@@ -158,23 +149,21 @@ with st.form("main_form"):
     submit = st.form_submit_button("JETZT PREIS BERECHNEN 🚀")
 
 # ==============================================================================
-# 5. VORHERSAGE (Auto-File-Detection)
+# 5. VORHERSAGE
 # ==============================================================================
 if submit:
-    # Wir suchen BEIDE Namen, damit es sicher klappt
-    model_files = ['mzyana_lightgbm_model.pkl', 'final_model.pkl']
+    # Automatische Suche nach dem Modell
+    files = ['final_model.pkl', 'mzyana_lightgbm_model.pkl']
     model = None
-    
-    for f in model_files:
+    for f in files:
         if os.path.exists(f):
             try:
                 model = joblib.load(f)
-                st.success(f"Modell '{f}' erfolgreich geladen!") # Feedback für dich
                 break
             except: continue
             
     if model is None:
-        st.error("❌ FEHLER: Keine Model-Datei gefunden. Bitte lade 'mzyana_lightgbm_model.pkl' hoch.")
+        st.error("❌ FEHLER: Modell nicht gefunden! Bitte lade 'mzyana_lightgbm_model.pkl' oder 'final_model.pkl' hoch.")
         st.write("Dateien im Ordner:", os.listdir())
     else:
         try:
@@ -193,6 +182,5 @@ if submit:
             preis = model.predict(df)[0]
             st.success(f"Geschätzte Miete: {preis:,.2f} €")
             st.balloons()
-            
         except Exception as e:
-            st.error(f"Berechnungsfehler: {e}")
+            st.error(f"Fehler bei der Berechnung: {e}")
