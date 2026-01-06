@@ -5,7 +5,15 @@ import joblib
 import json
 from datetime import datetime
 from sklearn.base import BaseEstimator, TransformerMixin
+from flask import Flask, render_template
 
+app = Flask(__name__)
+def index():
+    # Flask sucht automatisch im Ordner 'templates' nach der index.html
+    return render_template('index.html')
+
+if __name__ == '__main__':
+    app.run(debug=True)
 # ==============================================================================
 # 1. CUSTOM CLASSES (PFLICHT)
 # ==============================================================================
@@ -258,3 +266,4 @@ if submit:
 
 st.markdown("---")
 st.caption("Masterprojekt Prof. Wahl | Data Science 2025")
+
