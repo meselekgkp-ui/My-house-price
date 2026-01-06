@@ -7,7 +7,7 @@ from datetime import datetime
 from sklearn.base import BaseEstimator, TransformerMixin
 
 # ==============================================================================
-# 1. CUSTOM CLASSES (PFLICHT FÜR DAS MODELL)
+# 1. CUSTOM CLASSES (PFLICHT FÜR DAS MODELL) 
 # ==============================================================================
 class DateFeatureTransformer(BaseEstimator, TransformerMixin):
     def __init__(self, date_col): self.date_col = date_col
@@ -45,32 +45,10 @@ class CustomTargetEncoder(BaseEstimator, TransformerMixin):
         return X.drop(columns=[self.group_col])
 
 # ==============================================================================
-# 2. DESIGN & CSS
+# 2. KONFIGURATION & DATEN LADEN [cite: 2, 4]
 # ==============================================================================
 st.set_page_config(page_title="Mzyana AI", layout="wide")
 
-st.markdown("""
-    <style>
-    .stApp { background-color: #ffffff !important; }
-    h1, h2, h3, p, label { color: #262730 !important; }
-    .stButton>button {
-        background-color: #0068C9 !important;
-        color: white !important;
-        border-radius: 8px !important;
-        height: 50px !important;
-        width: 100%;
-    }
-    /* Schräger Wohnungstyp */
-    div[data-testid="stSelectbox"]:nth-of-type(4) {
-        transform: skewX(-5deg);
-        border-radius: 5px;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# ==============================================================================
-# 3. DATEN LADEN & SYNC-LOGIK
-# ==============================================================================
 @st.cache_data
 def load_all_data():
     try:
@@ -85,42 +63,82 @@ def load_all_data():
 
 GEO_DATA, PLZ_LOOKUP = load_all_data()
 
-# Session State für Synchronisation
+# Session State Initialisierung
 if 's_bl' not in st.session_state: st.session_state.s_bl = "Bayern"
 if 's_stadt' not in st.session_state: st.session_state.s_stadt = "München"
 if 's_plz' not in st.session_state: st.session_state.s_plz = "80331"
 
 def sync():
+    """Wird aufgerufen, wenn die PLZ geändert wird."""
     p = st.session_state.in_plz
     if p in PLZ_LOOKUP:
         stadt, bl = PLZ_LOOKUP[p]
-        st.session_state.s_bl, st.session_state.s_stadt, st.session_state.s_plz = bl, stadt, p
+        st.session_state.s_bl = bl
+        st.session_state.s_stadt = stadt
+        st.session_state.s_plz = p
 
 # ==============================================================================
-# 4. INTERFACE
+# 3. DESIGN & CSS
 # ==============================================================================
-st.title("Intelligente Immobiliensuche 🤖")
+st.markdown("""
+    <style>
+    .stApp { background-color: #ffffff !important; }
+    h1, h2, h3, p, label { color: #262730 !important; }
+    /* Button Style */
+    div.stButton > button:first-child {
+        background-color: #007BFF !important;
+        color: white !important;
+        height: 3em;
+        width: 100%;
+        font-weight: bold;
+        border-radius: 10px;
+    }
+    /* Wohnungstyp schräg stellen */
+    div[data-testid="stSelectbox"]:nth-of-type(5) select {
+        transform: skewX(-10deg);
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-with st.form("search_form"):
-    st.markdown("### 1. Standort")
-    plz_in = st.text_input("PLZ eingeben (Synchronisiert Stadt/Land)", value=st.session_state.s_plz, key="in_plz", on_change=sync)
-    
-    col_a, col_b = st.columns(2)
-    bl_list = sorted(list(GEO_DATA.keys()))
-    with col_a:
-        sel_bl = st.selectbox("Bundesland", bl_list, index=bl_list.index(st.session_state.s_bl) if st.session_state.s_bl in bl_list else 0)
-    
-    stadt_list = sorted(list(GEO_DATA.get(sel_bl, {}).keys()))
-    with col_b:
-        sel_stadt = st.selectbox("Stadt", stadt_list, index=stadt_list.index(st.session_state.s_stadt) if st.session_state.s_stadt in stadt_list else 0)
+# ==============================================================================
+# 4. STANDORT (AUSSERHALB DES FORMULARS FÜR SOFORT-SYNC)
+# ==============================================================================
+st.title("Intelligente Immobiliensuche 🏠")
 
-    st.markdown("---")
+st.markdown("### 1. Standort")
+plz_in = st.text_input("PLZ eingeben (tippen zum Synchronisieren)", 
+                       value=st.session_state.s_plz, 
+                       key="in_plz", 
+                       on_change=sync)
+
+col_bl, col_st = st.columns(2)
+bl_list = sorted(list(GEO_DATA.keys()))
+with col_bl:
+    sel_bl = st.selectbox("Bundesland", bl_list, 
+                          index=bl_list.index(st.session_state.s_bl) if st.session_state.s_bl in bl_list else 0)
+
+stadt_list = sorted(list(GEO_DATA.get(sel_bl, {}).keys()))
+with col_st:
+    sel_stadt = st.selectbox("Stadt", stadt_list, 
+                             index=stadt_list.index(st.session_state.s_stadt) if st.session_state.s_stadt in stadt_list else 0)
+
+# Synchronisation bei manueller Auswahl von Stadt/Land
+st.session_state.s_bl = sel_bl
+st.session_state.s_stadt = sel_stadt
+
+st.markdown("---")
+
+# ==============================================================================
+# 5. WEITERE DATEN (IN EINEM FORMULAR)
+# ==============================================================================
+with st.form("objekt_details"):
     col1, col2 = st.columns(2)
+    
     with col1:
         st.markdown("### 2. Daten")
         space = st.number_input("Wohnfläche (m²)", 10, 500, 70)
         zimmer = st.number_input("Zimmer", 1.0, 10.0, 3.0, step=0.5)
-        etage = st.number_input("Etage (0=EG)", -1, 20, 1)
+        etage = st.number_input("Etage (0=EG)", -1, 25, 1)
         baujahr = st.number_input("Baujahr", 1900, 2025, 2000)
 
     with col2:
@@ -143,33 +161,44 @@ with st.form("search_form"):
     with e4: gart = st.checkbox("Garten")
     with e5: kell = st.checkbox("Keller")
 
-    btn = st.form_submit_button("PREIS VORHERSAGEN 🚀")
+    st.markdown("<br>", unsafe_allow_html=True)
+    submit_btn = st.form_submit_button("PREIS VORHERSAGEN 🚀")
 
-if btn:
+# ==============================================================================
+# 6. MODELL-VORHERSAGE
+# ==============================================================================
+if submit_btn:
     try:
-        # WICHTIG: Dateiname muss EXAKT stimmen!
+        # Modell laden - achte darauf, dass der Name exakt wie in GitHub ist! 
         model = joblib.load('mzyana_lightgbm_model.pkl')
         
+        # Daten vorbereiten
         df = pd.DataFrame({
-            'date': [pd.to_datetime(datetime.now())], 'livingSpace': [float(space)],
-            'noRooms': [float(zimmer)], 'floor': [float(etage)], 'regio1': [sel_bl],
-            'regio2': [sel_stadt], 'heatingType': [HEATING[heiz]], 'condition': [COND[zust]],
-            'interiorQual': [QUAL[qual]], 'typeOfFlat': [TYPE[wtyp]], 'geo_plz': [str(plz_in)],
-            'balcony': [balk], 'lift': [aufz], 'hasKitchen': [kuec], 'garden': [gart],
-            'cellar': [kell], 'yearConstructed': [float(baujahr)],
-            'condition_was_missing': [0], 'interiorQual_was_missing': [0],
-            'heatingType_was_missing': [0], 'yearConstructed_was_missing': [0]
+            'date': [pd.to_datetime(datetime.now())],
+            'livingSpace': [float(space)],
+            'noRooms': [float(zimmer)],
+            'floor': [float(etage)],
+            'regio1': [sel_bl],
+            'regio2': [sel_stadt],
+            'heatingType': [HEATING[heiz]],
+            'condition': [COND[zust]],
+            'interiorQual': [QUAL[qual]],
+            'typeOfFlat': [TYPE[wtyp]],
+            'geo_plz': [str(plz_in)],
+            'balcony': [balk],
+            'lift': [aufz],
+            'hasKitchen': [kuec],
+            'garden': [gart],
+            'cellar': [kell],
+            'yearConstructed': [float(baujahr)],
+            'condition_was_missing': [0],
+            'interiorQual_was_missing': [0],
+            'heatingType_was_missing': [0],
+            'yearConstructed_was_missing': [0]
         })
 
-        res = model.predict(df)[0]
-        st.markdown(f"""
-            <div style="padding: 20px; background-color: #F0F2F6; border-left: 5px solid #0068C9; text-align: center;">
-                <h2 style="margin: 0;">Geschätzte Miete:</h2>
-                <h1 style="color: #0068C9; font-size: 50px;">{res:,.2f} €</h1>
-            </div>
-        """, unsafe_allow_html=True)
+        pred = model.predict(df)[0]
+        st.success(f"Voraussichtliche Kaltmiete: {pred:,.2f} €")
+        
     except Exception as e:
-        st.error(f"Fehler: {e}")
-
-# Update Session States nach Submit
-st.session_state.s_bl, st.session_state.s_stadt, st.session_state.s_plz = sel_bl, sel_stadt, plz_in
+        st.error(f"Fehler bei der Vorhersage: {e}")
