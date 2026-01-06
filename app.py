@@ -3,11 +3,12 @@ import pandas as pd
 import numpy as np
 import joblib
 import json
+import os
 from datetime import datetime
 from sklearn.base import BaseEstimator, TransformerMixin
 
 # ==============================================================================
-# 1. CUSTOM CLASSES (PFLICHT)
+# 1. MODELL-KLASSEN (Diese müssen exakt so bleiben, damit das Modell lädt)
 # ==============================================================================
 class DateFeatureTransformer(BaseEstimator, TransformerMixin):
     def __init__(self, date_col): self.date_col = date_col
@@ -45,253 +46,153 @@ class CustomTargetEncoder(BaseEstimator, TransformerMixin):
         return X.drop(columns=[self.group_col])
 
 # ==============================================================================
-# 2. DESIGN & CSS (TOTAL-FIX FÜR SICHTBARKEIT)
+# 2. DATEN & SYNC-LOGIK
 # ==============================================================================
+@st.cache_data
+def load_geo():
+    if not os.path.exists('geo_data.json'): return {}, {}
+    with open('geo_data.json', 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    rev = {}
+    for bl, staedte in data.items():
+        for stadt, plzs in staedte.items():
+            for p in plzs: rev[str(p)] = (stadt, bl)
+    return data, rev
 
-st.set_page_config(page_title="Mietpreis-Expertensystem", layout="wide", page_icon="🏢")
+GEO_DATA, PLZ_MAP = load_geo()
 
-# Dieses CSS überschreibt ALLE Streamlit-Standardfarben
+# Initialisierung der Auswahl
+if 'bl' not in st.session_state: st.session_state.bl = "Bayern"
+if 'st' not in st.session_state: st.session_state.st = "München"
+if 'plz' not in st.session_state: st.session_state.plz = "80331"
+
+def on_plz_change():
+    p = st.session_state.plz_input
+    if p in PLZ_MAP:
+        stadt, land = PLZ_MAP[p]
+        st.session_state.bl, st.session_state.st, st.session_state.plz = land, stadt, p
+
+# ==============================================================================
+# 3. DESIGN (CSS)
+# ==============================================================================
+st.set_page_config(page_title="Mzyana AI", layout="centered")
+
 st.markdown("""
     <style>
-    /* 1. Haupt-Hintergrund immer Weiß */
-    .stApp {
-        background-color: #ffffff !important;
-    }
-
-    /* 2. Alle Texte (Überschriften, Labels, Paragraphen) immer Dunkelgrau */
-    h1, h2, h3, h4, h5, h6, p, label, .stMarkdown {
-        color: #262730 !important;
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    }
-    
-    /* 3. Eingabefelder (Inputs) reparieren */
-    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
-        color: #000000 !important; /* Text im Feld schwarz */
-        background-color: #F0F2F6 !important; /* Hintergrund leicht grau */
-        border: 1px solid #D6D6D6 !important;
-    }
-    
-    /* 4. Dropdown-Menüs Lesbarkeit */
-    div[role="listbox"] ul {
-        background-color: #ffffff !important;
-    }
-    div[role="option"] {
-        color: #000000 !important;
-    }
-    div[role="option"]:hover {
-        background-color: #E6F3FF !important;
-    }
-
-    /* 5. Button Styling */
-    .stButton>button {
-        background-color: #0068C9 !important;
+    /* Button: Blauer Hintergrund, weißer Text */
+    div.stButton > button {
+        background-color: #007BFF !important;
         color: white !important;
-        font-size: 18px !important;
-        border-radius: 8px !important;
-        height: 50px !important;
-        border: none !important;
+        font-weight: bold;
+        height: 50px;
+        width: 100%;
+        border-radius: 10px;
+        border: none;
     }
-    .stButton>button:hover {
-        background-color: #004B91 !important;
+    /* Wohnungstyp: Schräg gestellt */
+    div[data-testid="stSelectbox"]:nth-of-type(4) {
+        transform: skewX(-10deg);
+        border: 1px solid #007BFF;
+        border-radius: 5px;
     }
-
-    /* 6. Ergebnis-Box Design */
-    .result-container {
-        padding: 30px;
-        background-color: #F9F9F9;
-        border-left: 6px solid #0068C9;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        text-align: center;
-        margin-top: 20px;
-    }
+    /* Allgemeine Verschönerung */
+    .stApp { background-color: #F8F9FA; }
     </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 3. DATENBANK & LOGIK
+# 4. DAS FORMULAR
 # ==============================================================================
+st.title("Mzyana AI: Mietpreis-Vorhersage 🏠")
 
-# Datenbank laden
-@st.cache_data # Cache damit es schneller lädt
-def load_geo_data():
-    try:
-        with open('geo_data.json', 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return None
+# A. STANDORT (Synchron)
+st.subheader("1. Wo liegt die Wohnung?")
+plz_in = st.text_input("PLZ eingeben", value=st.session_state.plz, key="plz_input", on_change=on_plz_change)
 
-GEO_DATA = load_geo_data()
+col_bl, col_st = st.columns(2)
+bl_liste = sorted(list(GEO_DATA.keys()))
+with col_bl:
+    sel_bl = st.selectbox("Bundesland", bl_liste, index=bl_liste.index(st.session_state.bl) if st.session_state.bl in bl_liste else 0)
+    st.session_state.bl = sel_bl
 
-# Mappings
-HEATING_MAP = {
-    "Zentralheizung": "central_heating", "Fernwärme": "district_heating", "Gas-Heizung": "gas_heating", 
-    "Etagenheizung": "self_contained_central_heating", "Fußbodenheizung": "floor_heating", 
-    "Ölheizung": "oil_heating", "Wärmepumpe": "heat_pump", "Holzpelletheizung": "wood_pellet_heating",
-    "Andere": "central_heating"
-}
-CONDITION_MAP = {
-    "Gepflegt": "well_kept", "Erstbezug": "first_time_use", "Saniert": "refurbished", 
-    "Vollständig renoviert": "fully_renovated", "Neuwertig": "mint_condition", 
-    "Modernisiert": "modernized", "Erstbezug nach Sanierung": "first_time_use_after_refurbishment", 
-    "Andere": "negotiable"
-}
-TYPE_MAP = {
-    "Etagenwohnung": "apartment", "Dachgeschoss": "roof_storey", "Erdgeschoss": "ground_floor", 
-    "Maisonette": "maisonette", "Hochparterre": "raised_ground_floor", "Penthouse": "penthouse", 
-    "Souterrain": "half_basement", "Andere": "apartment"
-}
-QUAL_MAP = {"Normal": "normal", "Gehoben": "sophisticated", "Luxus": "luxury", "Einfach": "simple"}
+staedte = sorted(list(GEO_DATA.get(sel_bl, {}).keys()))
+with col_st:
+    sel_st = st.selectbox("Stadt", staedte, index=staedte.index(st.session_state.st) if st.session_state.st in staedte else 0)
+    st.session_state.st = sel_st
 
-# ==============================================================================
-# 4. APP INTERFACE
-# ==============================================================================
-
-st.title("Mietpreis-Expertensystem")
 st.markdown("---")
 
-if GEO_DATA is None:
-    st.error("❌ FEHLER: Die Datei 'geo_data.json' wurde nicht gefunden. Bitte laden Sie diese auf GitHub hoch.")
-    st.stop()
+# B. DETAILS (In einem Formular für Ordnung)
+with st.form("details"):
+    st.subheader("2. Details zur Wohnung")
+    c1, c2 = st.columns(2)
+    with c1:
+        flaeche = st.number_input("Wohnfläche (m²)", min_value=10, max_value=500, value=60)
+        zimmer = st.number_input("Zimmer", min_value=1.0, max_value=10.0, value=2.0, step=0.5)
+    with c2:
+        etage = st.number_input("Etage (0=EG)", min_value=-1, max_value=30, value=1)
+        baujahr = st.number_input("Baujahr", min_value=1900, max_value=2026, value=2000)
 
+    st.subheader("3. Ausstattung")
+    # Mappings für das Modell
+    HEIZ = {"Zentral": "central_heating", "Gas": "gas_heating", "Fußboden": "floor_heating", "Fernwärme": "district_heating"}
+    ZUST = {"Gepflegt": "well_kept", "Modernisiert": "modernized", "Erstbezug": "first_time_use"}
+    QUAL = {"Normal": "normal", "Gehoben": "sophisticated", "Luxus": "luxury"}
+    TYP = {"Etagenwohnung": "apartment", "Dachgeschoss": "roof_storey", "Maisonette": "maisonette"}
 
-# --- STANDORT (AUSSERHALB DES FORMS, DAMIT SYNC FUNKTIONIERT) ---
-def build_plz_index(data):
-    index = {}
-    for state_key, cities in data.items():
-        for city_key, plzs in cities.items():
-            for plz_val in plzs:
-                if plz_val not in index:
-                    index[plz_val] = (state_key, city_key)
-    return index
+    col_h, col_z = st.columns(2)
+    with col_h:
+        h_wahl = st.selectbox("Heizung", list(HEIZ.keys()))
+        q_wahl = st.selectbox("Qualität", list(QUAL.keys()))
+    with col_z:
+        z_wahl = st.selectbox("Zustand", list(ZUST.keys()))
+        t_wahl = st.selectbox("Wohnungstyp", list(TYP.keys())) # Dieser wird schräg angezeigt
 
-PLZ_INDEX = build_plz_index(GEO_DATA)
+    st.subheader("4. Extras")
+    ex1, ex2, ex3 = st.columns(3)
+    with ex1: balk = st.checkbox("Balkon")
+    with ex2: kuech = st.checkbox("Küche")
+    with ex3: aufz = st.checkbox("Aufzug")
 
-def init_location_state():
-    if "s_state" not in st.session_state:
-        st.session_state.s_state = sorted(GEO_DATA.keys())[0]
-    if "s_city" not in st.session_state:
-        st.session_state.s_city = sorted(GEO_DATA[st.session_state.s_state].keys())[0]
-    if "s_plz" not in st.session_state:
-        st.session_state.s_plz = sorted(GEO_DATA[st.session_state.s_state][st.session_state.s_city])[0]
-
-def update_cities():
-    state_key = st.session_state.s_state
-    cities = sorted(GEO_DATA[state_key].keys())
-    if st.session_state.s_city not in cities:
-        st.session_state.s_city = cities[0]
-    update_plz_list()
-
-def update_plz_list():
-    state_key = st.session_state.s_state
-    city_key = st.session_state.s_city
-    plzs = sorted(GEO_DATA[state_key][city_key])
-    if st.session_state.s_plz not in plzs:
-        st.session_state.s_plz = plzs[0]
-
-def sync_from_plz():
-    plz_val = st.session_state.s_plz
-    if plz_val in PLZ_INDEX:
-        state_key, city_key = PLZ_INDEX[plz_val]
-        st.session_state.s_state = state_key
-        st.session_state.s_city = city_key
-
-init_location_state()
-
-st.markdown("### 1. Standort")
-all_states = sorted(list(GEO_DATA.keys()))
-state = st.selectbox("Bundesland", all_states, key="s_state", on_change=update_cities)
-
-available_cities = sorted(list(GEO_DATA[state].keys()))
-city = st.selectbox("Stadt / Landkreis (Tippen zum Suchen)", available_cities, key="s_city", on_change=update_plz_list)
-
-available_plzs = sorted(GEO_DATA[state][city])
-plz = st.selectbox("Postleitzahl", available_plzs, key="s_plz", on_change=sync_from_plz)
-
-st.caption(f"Gewaehlt: {plz} {city}, {state}")
-st.markdown("---")
-
-# --- HAUPTFORMULAR ---
-with st.form("main_form"):
-    # 2. OBJEKTDATEN & AUSSTATTUNG
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("### 2. Gebäudedaten")
-        living_space = st.number_input("Wohnfläche (m²)", 10, 600, 75, step=1)
-        rooms = st.number_input("Zimmer", 1, 15, 3, step=1)
-        floor = st.number_input("Etage", 0, 40, 1, step=1)
-        year = st.number_input("Baujahr", 1900, 2025, 1995, step=1)
-        
-    with col2:
-        st.markdown("### 3. Qualität & Zustand")
-        heating = st.selectbox("Heizung", list(HEATING_MAP.keys()))
-        condition = st.selectbox("Zustand", list(CONDITION_MAP.keys()))
-        quality = st.selectbox("Qualität", list(QUAL_MAP.keys()))
-        flat_type = st.selectbox("Wohnungstyp", list(TYPE_MAP.keys()))
-
-    # 4. EXTRAS
-    st.markdown("### 4. Extras")
-    c1, c2, c3, c4, c5 = st.columns(5)
-    with c1: has_balcony = st.checkbox("Balkon")
-    with c2: has_lift = st.checkbox("Aufzug")
-    with c3: has_kitchen = st.checkbox("Einbauküche")
-    with c4: has_garden = st.checkbox("Garten")
-    with c5: has_cellar = st.checkbox("Keller")
-
-    # Datum (Versteckt oder Default Heute)
-    date_val = datetime.now()
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    submit = st.form_submit_button("MIETPREIS BERECHNEN")
+    submit = st.form_submit_button("JETZT MIETPREIS BERECHNEN 🚀")
 
 # ==============================================================================
-# 5. LOGIK
+# 5. BERECHNUNG
 # ==============================================================================
-
 if submit:
     try:
-        model = joblib.load('mzyana_lightgbm_model.pkl')
+        # Hier laden wir dein neues 'final_model.pkl'
+        model = joblib.load('final_model.pkl')
         
-        # Dataframe exakt wie im Training
-        df_input = pd.DataFrame({
-            'date': [pd.to_datetime(date_val)],
-            'livingSpace': [float(living_space)],
-            'noRooms': [float(rooms)],
-            'floor': [float(floor)],
-            'regio1': [state],
-            'regio2': [city],
-            'heatingType': [HEATING_MAP[heating]],
-            'condition': [CONDITION_MAP[condition]],
-            'interiorQual': [QUAL_MAP[quality]],
-            'typeOfFlat': [TYPE_MAP[flat_type]],
-            'geo_plz': [str(plz)],
-            'balcony': [has_balcony],
-            'lift': [has_lift],
-            'hasKitchen': [has_kitchen],
-            'garden': [has_garden],
-            'cellar': [has_cellar],
-            'yearConstructed': [float(year)],
+        # Eingabedaten für das Modell bauen
+        input_data = pd.DataFrame({
+            'date': [pd.to_datetime(datetime.now())],
+            'livingSpace': [float(flaeche)],
+            'noRooms': [float(zimmer)],
+            'floor': [float(etage)],
+            'regio1': [sel_bl],
+            'regio2': [sel_st],
+            'heatingType': [HEIZ[h_wahl]],
+            'condition': [ZUST[z_wahl]],
+            'interiorQual': [QUAL[q_wahl]],
+            'typeOfFlat': [TYP[t_wahl]],
+            'geo_plz': [str(st.session_state.plz_input)],
+            'balcony': [balk],
+            'lift': [aufz],
+            'hasKitchen': [kuech],
+            'garden': [False],
+            'cellar': [True],
+            'yearConstructed': [float(baujahr)],
             'condition_was_missing': [0],
             'interiorQual_was_missing': [0],
             'heatingType_was_missing': [0],
             'yearConstructed_was_missing': [0]
         })
 
-        pred = model.predict(df_input)[0]
+        prediction = model.predict(input_data)[0]
 
-        # Ergebnis
-        st.markdown(f"""
-        <div class="result-container">
-            <h3 style="color: #555; margin: 0;">Geschätzte Gesamtmiete</h3>
-            <h1 style="color: #0068C9; font-size: 60px; margin: 10px 0;">{pred:,.2f} €</h1>
-            <p style="color: #888;">Berechnet für {city} ({plz}) • {living_space} m²</p>
-        </div>
-        """, unsafe_allow_html=True)
-
+        st.balloons()
+        st.success(f"Die geschätzte Kaltmiete beträgt: **{prediction:,.2f} €**")
+        
     except Exception as e:
-        st.error(f"Fehler: {e}")
-
-st.markdown("---")
-st.caption("Masterprojekt Prof. Wahl | Data Science 2025")
-
+        st.error(f"Fehler bei der Vorhersage: {e}")
