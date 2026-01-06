@@ -7,7 +7,7 @@ from datetime import datetime
 from sklearn.base import BaseEstimator, TransformerMixin
 
 # ==============================================================================
-# 1. HELFER-KLASSEN (Müssen exakt so bleiben)
+# 1. HELFER-KLASSEN (Damit das Modell funktioniert)
 # ==============================================================================
 class DateFeatureTransformer(BaseEstimator, TransformerMixin):
     def __init__(self, date_col): self.date_col = date_col
@@ -45,7 +45,7 @@ class CustomTargetEncoder(BaseEstimator, TransformerMixin):
         return X.drop(columns=[self.group_col])
 
 # ==============================================================================
-# 2. DESIGN & SETUP
+# 2. DESIGN & SEITEN-KONFIGURATION
 # ==============================================================================
 st.set_page_config(page_title="Mzyana AI", page_icon="🏠", layout="centered")
 
@@ -53,9 +53,8 @@ st.markdown("""
     <style>
     /* Hintergrund & Text */
     .stApp { background-color: #f8f9fa; }
-    h1, h2, h3 { color: #2c3e50; }
     
-    /* Button Design */
+    /* Button Design: Blau mit weißem Text */
     div.stButton > button {
         background-color: #007BFF !important;
         color: white !important;
@@ -116,12 +115,14 @@ plz = st.text_input("Postleitzahl (z.B. 80331)", value=st.session_state.plz, key
 c_bl, c_st = st.columns(2)
 bl_keys = sorted(list(GEO_DATA.keys()))
 with c_bl:
+    # Fallback, falls Bundesland nicht gefunden
     idx_bl = bl_keys.index(st.session_state.bl) if st.session_state.bl in bl_keys else 0
     sel_bl = st.selectbox("Bundesland", bl_keys, index=idx_bl)
     st.session_state.bl = sel_bl
 
 st_keys = sorted(list(GEO_DATA.get(sel_bl, {}).keys()))
 with c_st:
+    # Fallback, falls Stadt nicht gefunden
     idx_st = st_keys.index(st.session_state.st) if st.session_state.st in st_keys else 0
     sel_st = st.selectbox("Stadt", st_keys, index=idx_st)
     st.session_state.st = sel_st
@@ -160,7 +161,7 @@ with st.form("main_form"):
 # 5. VORHERSAGE (Auto-File-Detection)
 # ==============================================================================
 if submit:
-    # Intelligente Dateisuche: Probiert beide Namen
+    # Wir suchen BEIDE Namen, damit es sicher klappt
     model_files = ['mzyana_lightgbm_model.pkl', 'final_model.pkl']
     model = None
     
@@ -168,19 +169,21 @@ if submit:
         if os.path.exists(f):
             try:
                 model = joblib.load(f)
+                st.success(f"Modell '{f}' erfolgreich geladen!") # Feedback für dich
                 break
             except: continue
             
     if model is None:
-        st.error("❌ FEHLER: Modell-Datei nicht gefunden. Bitte lade 'mzyana_lightgbm_model.pkl' hoch.")
+        st.error("❌ FEHLER: Keine Model-Datei gefunden. Bitte lade 'mzyana_lightgbm_model.pkl' hoch.")
         st.write("Dateien im Ordner:", os.listdir())
     else:
         try:
             df = pd.DataFrame({
                 'date': [pd.to_datetime(datetime.now())], 'livingSpace': [float(flaeche)],
                 'noRooms': [float(zimmer)], 'floor': [float(etage)], 'regio1': [sel_bl],
-                'regio2': [sel_st], 'heatingType': [HEIZ[h_wahl]], 'condition': [ZUST.get("Gepflegt")], 
-                'interiorQual': ["normal"], 'typeOfFlat': [TYP[t_wahl]], 'geo_plz': [str(plz)],
+                'regio2': [sel_st], 'heatingType': [HEIZ.get(h_wahl, "central_heating")], 
+                'condition': [ZUST.get("Gepflegt")], 
+                'interiorQual': ["normal"], 'typeOfFlat': [TYP.get(t_wahl, "apartment")], 'geo_plz': [str(plz)],
                 'balcony': [balk], 'lift': [aufz], 'hasKitchen': [kuech], 'garden': [False],
                 'cellar': [True], 'yearConstructed': [float(baujahr)],
                 'condition_was_missing': [0], 'interiorQual_was_missing': [0],
