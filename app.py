@@ -1,4 +1,8 @@
-import streamlit as st
+# --- DEBUGGING START ---
+import os
+st.write("📂 Aktuelles Verzeichnis:", os.getcwd())
+st.write("📄 Alle Dateien hier:", os.listdir())
+# --- DEBUGGING ENDE ---import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
@@ -242,3 +246,4 @@ if submit:
         st.error("Fehler: Die Model-Datei 'mzyana_lightgbm_model.pkl' wurde nicht gefunden.")
     except Exception as e:
         st.error(f"Ein Fehler ist aufgetreten: {e}")
+
